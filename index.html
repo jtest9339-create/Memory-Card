@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -168,7 +168,15 @@
         
         <!-- Minimal Meta Inputs -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div class="space-y-1.5"><div class="flex justify-between items-end h-4"><label class="text-[10px] uppercase tracking-widest text-nordic-300 font-semibold pl-1 leading-none">Date</label></div><input type="date" id="edit-date" class="w-full bg-white border border-nordic-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-nordic-800 transition"></div>
+          <div class="space-y-1.5">
+            <div class="flex justify-between items-end h-4">
+              <label class="text-[10px] uppercase tracking-widest text-nordic-300 font-semibold pl-1 leading-none">Date</label>
+              <label class="text-[10px] uppercase tracking-widest text-nordic-500 font-semibold leading-none cursor-pointer flex items-center gap-1 hover:text-nordic-900 transition" title="設為今日封面">
+                <input type="checkbox" id="edit-is-cover" class="accent-nordic-800 rounded"> Cover
+              </label>
+            </div>
+            <input type="date" id="edit-date" class="w-full bg-white border border-nordic-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-nordic-800 transition">
+          </div>
           <div class="space-y-1.5"><div class="flex justify-between items-end h-4"><label class="text-[10px] uppercase tracking-widest text-nordic-300 font-semibold pl-1 leading-none">Mood</label></div><select id="edit-mood" class="w-full bg-white border border-nordic-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-nordic-800 transition appearance-none"><option value="5">😄 5</option><option value="4">😊 4</option><option value="3">😐 3</option><option value="2">🙁 2</option><option value="1">😭 1</option></select></div>
           <div class="space-y-1.5 md:col-span-2 relative"><div class="flex justify-between items-end h-4"><label class="text-[10px] uppercase tracking-widest text-nordic-300 font-semibold pl-1 leading-none">Location</label><button id="btn-detect-gps" class="text-[10px] text-nordic-800 font-medium hover:underline leading-none"><i class="fa-solid fa-location-crosshairs"></i> Get GPS</button></div><input type="text" id="edit-location" placeholder="City, Place..." class="w-full bg-white border border-nordic-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-nordic-800 transition"></div>
         </div>
@@ -283,7 +291,19 @@
         req.onsuccess = e => { db = e.target.result; resolve(db); };
       });
     }
-    async function loadAllEntries() { return new Promise(r => { const req = db.transaction('entries', 'readonly').objectStore('entries').getAll(); req.onsuccess = () => { entries = (req.result||[]).sort((a, b) => new Date(b.date) - new Date(a.date)); r(); }; }); }
+    async function loadAllEntries() { 
+      return new Promise(r => { 
+        const req = db.transaction('entries', 'readonly').objectStore('entries').getAll(); 
+        req.onsuccess = () => { 
+          entries = (req.result||[]).sort((a, b) => {
+             // 排序：日期越新越前面，日期相同則ID越新（越晚建立）越前面
+             if (b.date !== a.date) return b.date.localeCompare(a.date);
+             return b.id.localeCompare(a.id);
+          }); 
+          r(); 
+        }; 
+      }); 
+    }
     async function saveEntryToDB(obj) { return new Promise(r => { const tx = db.transaction('entries', 'readwrite'); tx.objectStore('entries').put(obj); tx.oncomplete = r; }); }
     async function deleteEntryFromDB(id) { return new Promise(r => { const tx = db.transaction('entries', 'readwrite'); tx.objectStore('entries').delete(id); tx.oncomplete = r; }); }
 
@@ -346,14 +366,52 @@
       ctx.drawImage(inkImg, 0, 0); overlay.innerHTML = ''; undoStack = []; redoStack = []; document.getElementById('btn-undo').disabled = true; document.getElementById('btn-redo').disabled = true;
     }
 
+    // Tab Navigation Helpers
+    function jumpToDiary(dateStr) {
+      const idx = entries.findIndex(e => e.date === dateStr);
+      if (idx !== -1) {
+        currentSingleIndex = idx;
+        document.querySelector('[data-tab="single"]').click();
+      } else {
+        openEditor(null, dateStr);
+      }
+    }
+
+    function jumpToDate(dateStr) {
+      if(!dateStr) return;
+      const idx = entries.findIndex(e => e.date === dateStr);
+      if(idx !== -1) {
+        currentSingleIndex = idx;
+        renderSingleView();
+      } else {
+        showToast('No entries for this date.', 'info');
+        document.getElementById('diary-date-picker').value = entries[currentSingleIndex]?.date || '';
+      }
+    }
+
     function renderSingleView() {
       const c = document.getElementById('single-card-container');
-      if (!entries.length) { c.innerHTML = `<div class="bg-white p-10 rounded-[2rem] text-center shadow-sm border border-nordic-100 mt-10"><i class="fa-solid fa-wind text-4xl text-nordic-200 mb-4 block"></i><p class="text-nordic-400 text-sm">No entries yet.</p></div>`; return; }
-      if (currentSingleIndex < 0) currentSingleIndex = 0; if (currentSingleIndex >= entries.length) currentSingleIndex = entries.length - 1;
+      if (!entries.length) { 
+        c.innerHTML = `<div class="bg-white p-10 rounded-[2rem] text-center shadow-sm border border-nordic-100 mt-10"><i class="fa-solid fa-wind text-4xl text-nordic-200 mb-4 block"></i><p class="text-nordic-400 text-sm">No entries yet.</p></div>`; 
+        return; 
+      }
+      if (currentSingleIndex < 0) currentSingleIndex = 0; 
+      if (currentSingleIndex >= entries.length) currentSingleIndex = entries.length - 1;
+      
       const i = entries[currentSingleIndex];
-      c.innerHTML = `
-        <div class="bg-white rounded-[2rem] shadow-sm border border-nordic-100 overflow-hidden">
-          <div class="p-6 pb-4 flex justify-between items-start">
+      const datePickerHtml = `
+        <div class="flex justify-between items-center mb-6 px-2">
+          <h2 class="text-2xl font-light tracking-tight text-nordic-900">Diary</h2>
+          <div class="flex items-center space-x-2 bg-white px-4 py-2 rounded-full border border-nordic-200 shadow-sm focus-within:ring-2 ring-nordic-800 transition">
+            <i class="fa-regular fa-calendar text-nordic-400"></i>
+            <input type="date" id="diary-date-picker" value="${i.date}" onchange="jumpToDate(this.value)" class="text-sm text-nordic-800 outline-none bg-transparent font-medium cursor-pointer">
+          </div>
+        </div>`;
+
+      c.innerHTML = datePickerHtml + `
+        <div class="bg-white rounded-[2rem] shadow-sm border border-nordic-100 overflow-hidden relative">
+          ${i.isCover ? `<div class="absolute top-4 left-4 z-10 bg-nordic-900 text-white text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-full shadow-sm font-semibold border border-white/20"><i class="fa-solid fa-star mr-1"></i>Cover</div>` : ''}
+          <div class="p-6 pb-4 flex justify-between items-start mt-2">
             <div><h4 class="font-light text-2xl tracking-tight text-nordic-900 mb-1">${i.date}</h4><div class="flex items-center space-x-3 text-xs text-nordic-400"><span class="text-sm">${MOOD_CONFIG[parseMoodScore(i.mood)].emoji}</span>${i.location?`<span><i class="fa-solid fa-location-dot mr-1"></i>${i.location}</span>`:''}</div></div>
             <button onclick="openEditor('${i.id}')" class="w-10 h-10 rounded-full bg-nordic-50 hover:bg-nordic-100 text-nordic-600 flex items-center justify-center transition"><i class="fa-solid fa-pen"></i></button>
           </div>
@@ -362,7 +420,11 @@
             ${i.typedText?`<p class="text-sm text-nordic-600 leading-relaxed font-light">${i.typedText}</p>`:''}
             <div class="flex flex-wrap gap-2">${(i.tags||[]).map(t=>`<span class="text-[11px] text-nordic-400 uppercase tracking-widest bg-nordic-50 px-2 py-1 rounded-md">#${t}</span>`).join('')}</div>
           </div>
-          <div class="bg-nordic-50/50 p-4 border-t border-nordic-100 flex justify-between text-xs text-nordic-400 font-medium"><button onclick="currentSingleIndex--;renderSingleView()" ${currentSingleIndex===0?'disabled class="opacity-30"':'class="hover:text-nordic-800"'}>PREV</button><span>${currentSingleIndex+1} / ${entries.length}</span><button onclick="currentSingleIndex++;renderSingleView()" ${currentSingleIndex===entries.length-1?'disabled class="opacity-30"':'class="hover:text-nordic-800"'}>NEXT</button></div>
+          <div class="bg-nordic-50/50 p-4 border-t border-nordic-100 flex justify-between items-center text-xs text-nordic-400 font-medium">
+            <button onclick="currentSingleIndex--;renderSingleView()" ${currentSingleIndex===0?'disabled class="opacity-30"':'class="hover:text-nordic-800 transition"'}>PREV</button>
+            <span class="bg-white px-3 py-1 rounded-full border border-nordic-200">${currentSingleIndex+1} / ${entries.length}</span>
+            <button onclick="currentSingleIndex++;renderSingleView()" ${currentSingleIndex===entries.length-1?'disabled class="opacity-30"':'class="hover:text-nordic-800 transition"'}>NEXT</button>
+          </div>
         </div>`;
     }
 
@@ -370,10 +432,17 @@
       const g = document.getElementById('weekly-grid'), today = new Date(); today.setDate(today.getDate() + selectedWeekOffset * 7); const mon = new Date(today); mon.setDate(today.getDate() - ((today.getDay() || 7) - 1));
       const days = Array.from({length: 7}, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d.toISOString().split('T')[0]; });
       document.getElementById('weekly-range-label').innerText = `${days[0].slice(5)} - ${days[6].slice(5)}`;
+      
       g.innerHTML = days.map((d, i) => {
-        const m = entries.find(e => e.date === d); const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-        return m ? `<div onclick="openEditor('${m.id}')" class="bg-white p-4 rounded-3xl shadow-sm border border-nordic-100 cursor-pointer hover:shadow-md transition"><div class="flex justify-between items-center mb-3"><span class="text-xs font-semibold text-nordic-800 uppercase tracking-widest">${dayNames[i]}</span><span>${MOOD_CONFIG[parseMoodScore(m.mood)].emoji}</span></div><div class="w-full aspect-4-3 bg-nordic-50 rounded-xl overflow-hidden relative">${m.photoSrc?`<img src="${m.photoSrc}" class="absolute inset-0 w-full h-full object-cover">`:''}<img src="${m.canvasDataUrl}" class="absolute inset-0 w-full h-full object-cover"></div></div>`
-                 : `<div onclick="openEditor(null, '${d}')" class="p-4 rounded-3xl border border-dashed border-nordic-200 cursor-pointer hover:border-nordic-400 transition flex flex-col items-center justify-center min-h-[160px] group"><span class="text-xs font-semibold text-nordic-400 uppercase tracking-widest mb-2">${dayNames[i]}</span><div class="w-8 h-8 rounded-full bg-nordic-100 text-nordic-400 group-hover:bg-nordic-800 group-hover:text-white transition flex items-center justify-center"><i class="fa-solid fa-plus text-xs"></i></div></div>`;
+        const dayEntries = entries.filter(e => e.date === d); 
+        const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+        if (dayEntries.length > 0) {
+          const m = dayEntries.find(e => e.isCover) || dayEntries[0];
+          const countBadge = dayEntries.length > 1 ? `<div class="absolute -top-2 -right-2 bg-nordic-900 text-white text-[10px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-sm border-2 border-white">${dayEntries.length}</div>` : '';
+          return `<div onclick="jumpToDiary('${d}')" class="bg-white p-4 rounded-3xl shadow-sm border border-nordic-100 cursor-pointer hover:shadow-md transition relative"><div class="flex justify-between items-center mb-3"><span class="text-xs font-semibold text-nordic-800 uppercase tracking-widest">${dayNames[i]}</span><span>${MOOD_CONFIG[parseMoodScore(m.mood)].emoji}</span></div><div class="w-full aspect-4-3 bg-nordic-50 rounded-xl overflow-hidden relative">${m.photoSrc?`<img src="${m.photoSrc}" class="absolute inset-0 w-full h-full object-cover">`:''}<img src="${m.canvasDataUrl}" class="absolute inset-0 w-full h-full object-cover"></div>${countBadge}</div>`;
+        } else {
+          return `<div onclick="openEditor(null, '${d}')" class="p-4 rounded-3xl border border-dashed border-nordic-200 cursor-pointer hover:border-nordic-400 transition flex flex-col items-center justify-center min-h-[160px] group"><span class="text-xs font-semibold text-nordic-400 uppercase tracking-widest mb-2">${dayNames[i]}</span><div class="w-8 h-8 rounded-full bg-nordic-100 text-nordic-400 group-hover:bg-nordic-800 group-hover:text-white transition flex items-center justify-center"><i class="fa-solid fa-plus text-xs"></i></div></div>`;
+        }
       }).join('');
     }
 
@@ -417,25 +486,37 @@
     function refreshActiveView() { if (activeTab === 'single') renderSingleView(); else if (activeTab === 'weekly') renderWeeklyView(); else if (activeTab === 'on-this-day') renderOnThisDayView(); else if (activeTab === 'filter') renderFilterView(); else if (activeTab === 'mood-chart') renderMoodChartView(); else if (activeTab === 'map') renderMapView(); }
 
     function openEditor(id = null, forceDate = null) {
-      if (!id) { const tgt = forceDate || new Date().toISOString().split('T')[0]; const ex = entries.find(e => e.date === tgt); if (ex) { id = ex.id; if (!forceDate) showToast('Entry exists for today, opening editor', 'info'); } }
       currentEditingId = id; document.getElementById('editor-modal').classList.remove('hidden'); document.getElementById('overlay-container').innerHTML = ''; hideStickerToolbar(); setMode('pen'); undoStack = []; redoStack = []; document.getElementById('btn-undo').disabled = true; document.getElementById('btn-redo').disabled = true;
       const bgImgEl = document.getElementById('canvas-bg-img'), locInput = document.getElementById('edit-location');
       if (id) {
         document.getElementById('btn-delete-entry').classList.remove('hidden'); const item = entries.find(e => e.id === id);
-        document.getElementById('edit-date').value = item.date; locInput.value = item.location || ''; document.getElementById('edit-mood').value = parseMoodScore(item.mood).toString(); document.getElementById('edit-tags').value = (item.tags || []).join(', '); document.getElementById('edit-typed-text').value = item.typedText || ''; locInput.dataset.lat = item.lat || ''; locInput.dataset.lng = item.lng || ''; bgImageSrc = item.photoSrc || null;
+        document.getElementById('edit-date').value = item.date; locInput.value = item.location || ''; document.getElementById('edit-mood').value = parseMoodScore(item.mood).toString(); document.getElementById('edit-tags').value = (item.tags || []).join(', '); document.getElementById('edit-typed-text').value = item.typedText || ''; locInput.dataset.lat = item.lat || ''; locInput.dataset.lng = item.lng || ''; bgImageSrc = item.photoSrc || null; document.getElementById('edit-is-cover').checked = item.isCover || false;
         if(bgImageSrc){ bgImgEl.src = bgImageSrc; bgImgEl.classList.remove('hidden'); } else { bgImgEl.classList.add('hidden'); bgImgEl.src = ''; }
         ctx.clearRect(0,0,canvas.width,canvas.height); if(item.canvasDataUrl){ const i = new Image(); i.onload = () => ctx.drawImage(i, 0, 0); i.src = item.canvasDataUrl; }
       } else {
-        document.getElementById('btn-delete-entry').classList.add('hidden'); document.getElementById('edit-date').value = forceDate || new Date().toISOString().split('T')[0]; locInput.value = ''; document.getElementById('edit-mood').value = '5'; document.getElementById('edit-tags').value = ''; document.getElementById('edit-typed-text').value = ''; locInput.dataset.lat = ''; locInput.dataset.lng = ''; bgImageSrc = null; bgImgEl.classList.add('hidden'); bgImgEl.src = ''; ctx.clearRect(0, 0, canvas.width, canvas.height); 
+        const fDate = forceDate || new Date().toISOString().split('T')[0];
+        document.getElementById('btn-delete-entry').classList.add('hidden'); document.getElementById('edit-date').value = fDate; locInput.value = ''; document.getElementById('edit-mood').value = '5'; document.getElementById('edit-tags').value = ''; document.getElementById('edit-typed-text').value = ''; locInput.dataset.lat = ''; locInput.dataset.lng = ''; bgImageSrc = null; bgImgEl.classList.add('hidden'); bgImgEl.src = ''; ctx.clearRect(0, 0, canvas.width, canvas.height); 
+        const hasOthers = entries.some(e => e.date === fDate); document.getElementById('edit-is-cover').checked = !hasOthers; // 該天第一篇預設為 Cover
         navigator.geolocation.getCurrentPosition(async pos => { const lat=pos.coords.latitude, lng=pos.coords.longitude; locInput.dataset.lat=lat; locInput.dataset.lng=lng; try{ const res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`); const data=await res.json(); locInput.value=(data.address?.city||data.address?.town||'')+' '+(data.address?.suburb||''); }catch{ locInput.value=`${lat.toFixed(2)}, ${lng.toFixed(2)}`; } }, ()=>{});
       }
     }
 
     async function saveCurrentEditor() {
       const dateVal = document.getElementById('edit-date').value; if (!dateVal) return showToast('Select a date', 'error');
-      const dateExists = entries.find(e => e.date === dateVal && e.id !== currentEditingId); if (dateExists) return showToast('Limit: 1 entry per day.', 'error');
       await bakeOverlaysToStrokes(); const locInput = document.getElementById('edit-location');
-      await saveEntryToDB({ id: currentEditingId || `entry_${Date.now()}`, date: dateVal, year: dateVal.slice(0, 4), monthDay: dateVal.slice(5), location: locInput.value, lat: locInput.dataset.lat || null, lng: locInput.dataset.lng || null, mood: document.getElementById('edit-mood').value, tags: document.getElementById('edit-tags').value.split(',').map(s => s.trim().replace(/^#/, '')).filter(Boolean), typedText: document.getElementById('edit-typed-text').value, canvasDataUrl: canvas.toDataURL('image/png'), photoSrc: bgImageSrc });
+      const isCover = document.getElementById('edit-is-cover').checked;
+      
+      // 如果這篇被設為封面，將同一天其他篇的封面取消
+      if (isCover) {
+        for (let e of entries) {
+          if (e.date === dateVal && e.id !== currentEditingId && e.isCover) {
+            e.isCover = false;
+            await saveEntryToDB(e);
+          }
+        }
+      }
+
+      await saveEntryToDB({ id: currentEditingId || `entry_${Date.now()}`, date: dateVal, year: dateVal.slice(0, 4), monthDay: dateVal.slice(5), location: locInput.value, lat: locInput.dataset.lat || null, lng: locInput.dataset.lng || null, mood: document.getElementById('edit-mood').value, tags: document.getElementById('edit-tags').value.split(',').map(s => s.trim().replace(/^#/, '')).filter(Boolean), typedText: document.getElementById('edit-typed-text').value, canvasDataUrl: canvas.toDataURL('image/png'), photoSrc: bgImageSrc, isCover: isCover });
       await loadAllEntries(); document.getElementById('editor-modal').classList.add('hidden'); showToast('Saved'); refreshActiveView();
     }
 
