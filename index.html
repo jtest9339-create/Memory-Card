@@ -420,6 +420,17 @@
             執行瘦身
           </button>
         </div>
+
+        <!-- Danger Zone: Clear All Data -->
+        <div class="flex items-center justify-between p-3 bg-rose-100/70 border border-rose-300 rounded-xl mt-2">
+          <div>
+            <p class="font-bold text-rose-950 text-xs">清空本機所有資料</p>
+            <p class="text-[11px] text-rose-800 mt-0.5">刪除這台 iPad 上的所有日記紀錄（不可復原）</p>
+          </div>
+          <button id="btn-clear-all-data" class="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition shadow-sm">
+            一鍵全刪
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -532,6 +543,38 @@
         const store = tx.objectStore('entries');
         store.delete(id);
         tx.oncomplete = async () => {
+          resolve();
+        };
+      });
+    }
+
+    // --- CLEAR ALL DATA FUNCTION (一鍵全刪機制) ---
+    async function clearAllDataFromDB() {
+      if (!confirm('⚠️ 警告：您確定要清空這台裝置上的「所有日記紀錄」嗎？\n\n刪除後資料將無法復原！建議先點擊「匯出備份」進行備份。')) {
+        return;
+      }
+      if (!confirm('🚨 最後確認：真的要刪除這台 iPad 上的所有日記嗎？')) {
+        return;
+      }
+
+      return new Promise((resolve) => {
+        const tx = db.transaction('entries', 'readwrite');
+        const store = tx.objectStore('entries');
+        const req = store.clear();
+
+        req.onsuccess = async () => {
+          entries = [];
+          currentSingleIndex = 0;
+          await loadAllEntries();
+          document.getElementById('sync-modal').classList.add('hidden');
+          showToast('已清空這台裝置上的所有日記', 'info');
+          refreshActiveView();
+          resolve();
+        };
+
+        req.onerror = (err) => {
+          console.error('清空資料庫失敗:', err);
+          showToast('清除資料失敗，請重新整理頁面再試', 'error');
           resolve();
         };
       });
@@ -1342,6 +1385,7 @@
       document.getElementById('btn-export-json').onclick = exportBackupJSON;
       document.getElementById('input-import-json').onchange = importBackupJSON;
       document.getElementById('btn-compress-images').onclick = compressOldEntries;
+      document.getElementById('btn-clear-all-data').onclick = clearAllDataFromDB;
 
       // Render default view
       renderSingleView();
